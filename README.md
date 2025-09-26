@@ -8,6 +8,7 @@ What it does
 - "Connection" button sends the initial offer
 - Shows local (나) and remote (상대) video streams
 - Receives `rtc-text` and plays it via Google TTS (if configured) or browser SpeechSynthesis
+- Optional STT: Microphone -> silence-debounced segmenting -> Google STT recognize -> emits `rtc-text`
 
 Usage
 1. Install dependencies:
@@ -30,3 +31,10 @@ Google TTS (optional)
 - Optional overrides: `VITE_GOOGLE_TTS_LANG`, `VITE_GOOGLE_TTS_VOICE`, `VITE_GOOGLE_TTS_RATE`, `VITE_GOOGLE_TTS_PITCH`.
 - Without an API key, the app falls back to the browser's `speechSynthesis` API.
 - Browsers may block autoplay; ensure you've interacted with the page (clicked) before TTS playback occurs.
+
+Google STT (optional)
+- Set `VITE_GOOGLE_STT_API_KEY` in `.env` to use Google Cloud Speech‑to‑Text Recognize API.
+- Click `Start STT` to begin recording; the app detects silence (default 800ms) and sends the last segment for recognition.
+- Env overrides: `VITE_GOOGLE_STT_LANG` (default `ko-KR`), `VITE_GOOGLE_STT_DEBOUNCE_MS`, `VITE_GOOGLE_STT_SILENCE_RMS`.
+- Audio is recorded as OGG/Opus (or WebM/Opus fallback) and posted to `speech:recognize`.
+- Security note: Calling STT directly from the browser exposes your API key. For production, proxy requests via your backend.

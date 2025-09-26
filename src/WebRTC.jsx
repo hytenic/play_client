@@ -18,6 +18,16 @@ export default function WebRTC() {
   const localStreamRef = useRef(null);
   const didInitRef = useRef(false);
 
+  // STT state/refs
+  const [sttOn, setSttOn] = useState(false);
+  const sttOnRef = useRef(false);
+  const mediaRecorderRef = useRef(null);
+  const sttSegmentChunksRef = useRef([]);
+  const audioCtxRef = useRef(null);
+  const analyserRef = useRef(null);
+  const silenceIntervalRef = useRef(null);
+  const lastSpeechTsRef = useRef(0);
+
   const [roomId, setRoomId] = useState('');
   const roomRef = useRef('');
 
@@ -77,6 +87,184 @@ export default function WebRTC() {
       throw e;
     }
   }, []);
+
+  // Emit recognized text to room
+  const emitText = useCallback((text) => {
+    const socket = socketRef.current;
+    const room = roomRef.current;
+    if (!socket || !room || !text) return;
+    const payload = { roomId: room, text };
+    socket.emit('rtc-text', payload);
+    console.log('[rtc-text] recognized & sent:', payload);
+  }, []);
+
+  // Convert Blob to base64 string
+  const blobToBase64 = (blob) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      try {
+        const dataUrl = reader.result; // data:...;base64,XXXX
+        const base64 = String(dataUrl).split(',')[1];
+        resolve(base64);
+      } catch (e) { reject(e); }
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+
+  // Send audio blob to Google STT and emit transcript
+  const recognizeWithGoogle = useCallback(async (blob, mimeTypeHint) => {
+    try {
+      const apiKey = import.meta.env.VITE_GOOGLE_STT_API_KEY;
+      const languageCode = import.meta.env.VITE_GOOGLE_STT_LANG || 'ko-KR';
+      if (!apiKey) {
+        console.warn('[stt] Missing VITE_GOOGLE_STT_API_KEY');
+        return;
+      }
+
+      // Map mime to Google encoding
+      let encoding = 'OGG_OPUS';
+      if (mimeTypeHint && mimeTypeHint.includes('webm')) encoding = 'WEBM_OPUS';
+
+      // 샘플레이트/채널 명시 (Opus 기본 48000Hz, mono)
+      const sampleRate = Math.round((audioCtxRef.current?.sampleRate) || 48000);
+      const audioChannelCount = 1;
+
+      const content = await blobToBase64(blob);
+      const res = await fetch(`https://speech.googleapis.com/v1/speech:recognize?key=${apiKey}` , {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          config: {
+            encoding,
+            languageCode,
+            enableAutomaticPunctuation: true,
+            sampleRateHertz: sampleRate,
+            audioChannelCount,
+          },
+          audio: { content },
+        }),
+      });
+      if (!res.ok) {
+        console.error('[stt] recognize HTTP error', res.status, await res.text());
+        return;
+      }
+      const json = await res.json();
+      const transcript = json?.results?.[0]?.alternatives?.[0]?.transcript;
+      if (transcript && transcript.trim()) {
+        emitText(transcript.trim());
+      } else {
+        console.log('[stt] No transcript');
+      }
+    } catch (e) {
+      console.error('[stt] recognize error', e);
+    }
+  }, [emitText]);
+
+  // Start STT: record mic, detect silence, send segments to STT
+  const startSTT = useCallback(async () => {
+    if (sttOnRef.current) return;
+    const debounceMs = Number(import.meta.env.VITE_GOOGLE_STT_DEBOUNCE_MS || 800);
+    const silenceRms = Number(import.meta.env.VITE_GOOGLE_STT_SILENCE_RMS || 0.02);
+    const stream = await getMedia();
+
+    // Build audio-only stream for recording/analyser
+    const audioTracks = stream.getAudioTracks();
+    if (audioTracks.length === 0) {
+      window.alert('마이크 트랙을 찾을 수 없습니다.');
+      return;
+    }
+    const audioStream = new MediaStream([audioTracks[0]]);
+
+    // Choose mime type
+    let mimeType = 'audio/ogg; codecs=opus';
+    if (!('MediaRecorder' in window)) {
+      window.alert('이 브라우저는 MediaRecorder를 지원하지 않습니다.');
+      return;
+    }
+    if (!MediaRecorder.isTypeSupported(mimeType)) {
+      if (MediaRecorder.isTypeSupported('audio/webm; codecs=opus')) {
+        mimeType = 'audio/webm; codecs=opus';
+      } else {
+        console.warn('[stt] Opus recording not supported');
+        mimeType = '';
+      }
+    }
+
+    const mr = new MediaRecorder(audioStream, mimeType ? { mimeType } : undefined);
+    mediaRecorderRef.current = mr;
+    sttSegmentChunksRef.current = [];
+
+    mr.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) {
+        sttSegmentChunksRef.current.push(e.data);
+      }
+    };
+
+    mr.start(250); // small chunks to bound segment size
+
+    // Setup analyser for silence detection
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    audioCtxRef.current = audioCtx;
+    const source = audioCtx.createMediaStreamSource(audioStream);
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 2048;
+    analyserRef.current = analyser;
+    source.connect(analyser);
+
+    lastSpeechTsRef.current = Date.now();
+    sttOnRef.current = true;
+    setSttOn(true);
+
+    const buf = new Uint8Array(analyser.fftSize);
+    silenceIntervalRef.current = setInterval(async () => {
+      if (!sttOnRef.current) return;
+      analyser.getByteTimeDomainData(buf);
+      // Compute RMS where 128 is silence in 8-bit PCM
+      let sumSq = 0;
+      for (let i = 0; i < buf.length; i++) {
+        const v = (buf[i] - 128) / 128; // -1..1
+        sumSq += v * v;
+      }
+      const rms = Math.sqrt(sumSq / buf.length);
+      const now = Date.now();
+      if (rms > silenceRms) {
+        lastSpeechTsRef.current = now;
+      }
+      const silentFor = now - lastSpeechTsRef.current;
+      if (silentFor >= debounceMs && sttSegmentChunksRef.current.length > 0) {
+        // Finalize segment and send to STT
+        const segment = new Blob(sttSegmentChunksRef.current.slice(), { type: mimeType || 'audio/ogg; codecs=opus' });
+        sttSegmentChunksRef.current = [];
+        recognizeWithGoogle(segment, mimeType);
+      }
+    }, 150);
+
+    console.log('[stt] started, mime=', mimeType, 'debounceMs=', debounceMs, 'silenceRms=', silenceRms);
+  }, [getMedia, recognizeWithGoogle]);
+
+  const stopSTT = useCallback(() => {
+    sttOnRef.current = false;
+    setSttOn(false);
+    try {
+      const mr = mediaRecorderRef.current;
+      if (mr && mr.state !== 'inactive') {
+        try { mr.stop(); } catch {}
+      }
+      mediaRecorderRef.current = null;
+    } catch {}
+    try {
+      if (silenceIntervalRef.current) clearInterval(silenceIntervalRef.current);
+    } catch {}
+    silenceIntervalRef.current = null;
+    try {
+      audioCtxRef.current?.close();
+    } catch {}
+    audioCtxRef.current = null;
+    sttSegmentChunksRef.current = [];
+    console.log('[stt] stopped');
+  }, []);
+
 
   // Add local tracks only once per track
   const addLocalTracksOnce = useCallback((pc, stream) => {
@@ -268,6 +456,7 @@ export default function WebRTC() {
 
     return () => {
       // Cleanup
+      try { stopSTT(); } catch {}
       try {
         socket.off('room-full');
         socket.off('rtc-text');
@@ -297,6 +486,12 @@ export default function WebRTC() {
       <h1>실시간 P2P 통신을 해보자</h1>
       <button onClick={createOffer}>Connection</button>
       <button onClick={sendTestText} style={{ marginLeft: 8 }}>Send Text</button>
+      <button
+        onClick={() => (sttOnRef.current ? stopSTT() : startSTT())}
+        style={{ marginLeft: 8 }}
+      >
+        {sttOn ? 'Stop STT' : 'Start STT'}
+      </button>
       <br />
       <div>나</div>
       <video
