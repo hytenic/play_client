@@ -117,6 +117,24 @@ export default function WebRTC() {
     // console.log('Send Offer');
   }, [ensurePeerConnection, getMedia, send, addLocalTracksOnce]);
 
+  // Emit simple text over socket (rtc-text)
+  const sendTestText = useCallback(() => {
+    const socket = socketRef.current;
+    const room = roomRef.current;
+    if (!socket) {
+      console.warn('[rtc-text] skip: no socket');
+      return;
+    }
+    try {
+      // Include roomId so server can broadcast to the room
+      const payload = { roomId: room, text: '안녕하세요. 테스트 입니다.' };
+      socket.emit('rtc-text', payload);
+      console.log('[rtc-text] sent:', payload);
+    } catch (e) {
+      console.error('[rtc-text] emit error', e);
+    }
+  }, []);
+
   // Setup lifecycle: prompt room, connect socket, bind handlers
   useEffect(() => {
     if (didInitRef.current) return; // guard against dev re-mounts/HMR
@@ -148,6 +166,18 @@ export default function WebRTC() {
     socket.on('room-full', () => {
       window.alert('입장 인원 초과');
       window.location.reload();
+    });
+
+    // Receive plain text messages
+    socket.on('rtc-text', (payload) => {
+      try {
+        const text = typeof payload === 'string'
+          ? payload
+          : (payload?.text ?? payload?.message ?? JSON.stringify(payload));
+        console.log('[socket] rtc-text:', text);
+      } catch (e) {
+        console.error('[socket] rtc-text handle error', e);
+      }
     });
 
     socket.on('rtc-message', async (message) => {
@@ -190,6 +220,7 @@ export default function WebRTC() {
       // Cleanup
       try {
         socket.off('room-full');
+        socket.off('rtc-text');
         socket.off('rtc-message');
         socket.disconnect();
       } catch {}
@@ -215,6 +246,7 @@ export default function WebRTC() {
     <div>
       <h1>실시간 P2P 통신을 해보자</h1>
       <button onClick={createOffer}>Connection</button>
+      <button onClick={sendTestText} style={{ marginLeft: 8 }}>Send Text</button>
       <br />
       <div>나</div>
       <video
