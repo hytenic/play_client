@@ -7,6 +7,7 @@ What it does
 - Connects to a Socket.IO signaling server at `http://localhost:5004`
 - "Connection" button sends the initial offer
 - Shows local (나) and remote (상대) video streams
+- Receives `rtc-text` and plays it via Google TTS (if configured) or browser SpeechSynthesis
 
 Usage
 1. Install dependencies:
@@ -23,3 +24,9 @@ Notes
 - The component uses modern `ontrack` for remote stream, and still listens to legacy `addstream` for compatibility.
 - Local video is muted to prevent feedback.
 - STUN server is `stun:stun.l.google.com:19302`.
+
+Google TTS (optional)
+- Set `VITE_GOOGLE_TTS_API_KEY` in `.env` to use Google Cloud Text-to-Speech.
+- Optional overrides: `VITE_GOOGLE_TTS_LANG`, `VITE_GOOGLE_TTS_VOICE`, `VITE_GOOGLE_TTS_RATE`, `VITE_GOOGLE_TTS_PITCH`.
+- Without an API key, the app falls back to the browser's `speechSynthesis` API.
+- Browsers may block autoplay; ensure you've interacted with the page (clicked) before TTS playback occurs.

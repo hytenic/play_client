@@ -135,6 +135,54 @@ export default function WebRTC() {
     }
   }, []);
 
+  // Google TTS: synthesize and play received text
+  const speakText = useCallback(async (text) => {
+    if (!text || typeof text !== 'string') return;
+    const apiKey = import.meta.env.VITE_GOOGLE_TTS_API_KEY;
+    const voiceName = import.meta.env.VITE_GOOGLE_TTS_VOICE || 'ko-KR-Standard-A';
+    const languageCode = import.meta.env.VITE_GOOGLE_TTS_LANG || 'ko-KR';
+    const speakingRate = Number(import.meta.env.VITE_GOOGLE_TTS_RATE || 1.0);
+    const pitch = Number(import.meta.env.VITE_GOOGLE_TTS_PITCH || 0);
+
+    if (apiKey) {
+      try {
+        const res = await fetch(
+          `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              input: { text },
+              voice: { languageCode, name: voiceName },
+              audioConfig: { audioEncoding: 'MP3', speakingRate, pitch },
+            }),
+          }
+        );
+        if (!res.ok) throw new Error(`TTS HTTP ${res.status}`);
+        const json = await res.json();
+        const audioContent = json?.audioContent;
+        if (!audioContent) throw new Error('No audioContent in TTS response');
+        const audio = new Audio(`data:audio/mp3;base64,${audioContent}`);
+        await audio.play();
+        return;
+      } catch (e) {
+        console.warn('[tts] Google TTS failed, falling back to SpeechSynthesis', e);
+      }
+    }
+
+    try {
+      if ('speechSynthesis' in window) {
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.lang = languageCode || 'ko-KR';
+        window.speechSynthesis.speak(utter);
+      } else {
+        console.warn('[tts] speechSynthesis not supported');
+      }
+    } catch (e) {
+      console.error('[tts] fallback speech synthesis error', e);
+    }
+  }, []);
+
   // Setup lifecycle: prompt room, connect socket, bind handlers
   useEffect(() => {
     if (didInitRef.current) return; // guard against dev re-mounts/HMR
@@ -175,6 +223,8 @@ export default function WebRTC() {
           ? payload
           : (payload?.text ?? payload?.message ?? JSON.stringify(payload));
         console.log('[socket] rtc-text:', text);
+        // Speak received text
+        speakText(text);
       } catch (e) {
         console.error('[socket] rtc-text handle error', e);
       }
@@ -240,7 +290,7 @@ export default function WebRTC() {
       } catch {}
       localStreamRef.current = null;
     };
-  }, [ensurePeerConnection, getMedia, addLocalTracksOnce]);
+  }, [ensurePeerConnection, getMedia, addLocalTracksOnce, speakText]);
 
   return (
     <div>
