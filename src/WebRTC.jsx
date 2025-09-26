@@ -20,8 +20,8 @@ export default function WebRTC() {
   const silenceIntervalRef = useRef(null);
   const lastSpeechTsRef = useRef(0);
 
-  const [roomId, setRoomId] = useState('');
-  const roomRef = useRef('');
+  const [roomId, setRoomId] = useState('test');
+  const roomRef = useRef('test');
 
   // --- helpers ---------------------------------------------------------------
 
@@ -177,7 +177,7 @@ export default function WebRTC() {
 
     // 무음 감지 파라미터 (테스트에 안정적인 값)
     const debounceMs = Number(import.meta.env.VITE_GOOGLE_STT_DEBOUNCE_MS || 2500);
-    const silenceRms = Number(import.meta.env.VITE_GOOGLE_STT_SILENCE_RMS || 0.01);
+    const silenceRms = Number(import.meta.env.VITE_GOOGLE_STT_SILENCE_RMS || 0.005);
 
     const stream = await getMedia();
 
@@ -376,13 +376,9 @@ export default function WebRTC() {
     if (didInitRef.current) return;
     didInitRef.current = true;
 
-    const room = window.prompt('Room ID를 입력하세요! (상대방과 연결할 때 같은 Room이어야 함!) : ');
-    if (!room || room.trim().length === 0) {
-      window.location.reload();
-      return;
-    }
-    setRoomId(room.trim());
-    roomRef.current = room.trim();
+    const room = 'test';
+    setRoomId(room);
+    roomRef.current = room;
 
     const socket = io('http://localhost:5004');
     socketRef.current = socket;
