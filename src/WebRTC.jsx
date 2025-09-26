@@ -9,6 +9,8 @@ export default function WebRTC() {
   const socketRef = useRef(null);
   const localStreamRef = useRef(null);
   const didInitRef = useRef(false);
+  const connectionStartRef = useRef(null);
+  const socketConnectStartRef = useRef(null);
 
   // STT state/refs
   const [sttOn, setSttOn] = useState(false);
@@ -303,6 +305,11 @@ export default function WebRTC() {
 
   const createOffer = useCallback(async () => {
     const pc = ensurePeerConnection();
+    const start = performance.now();
+    connectionStartRef.current = start;
+    socketConnectStartRef.current = start;
+    const socket = socketRef.current;
+    if (socket && !socket.connected) socket.connect();
     const stream = await getMedia();
     addLocalTracksOnce(pc, stream);
 
@@ -380,11 +387,21 @@ export default function WebRTC() {
     setRoomId(room);
     roomRef.current = room;
 
-    const socket = io('http://localhost:5004');
+    const socket = io('http://localhost:5004', { autoConnect: false });
     socketRef.current = socket;
-    socket.emit('join', roomRef.current);
 
-    socket.on('connect', () => console.log('[socket] connected', socket.id));
+    socket.on('connect', () => {
+      const now = performance.now();
+      let msg = `[socket] connected ${socket.id ?? ''}`.trim();
+      if (socketConnectStartRef.current != null) {
+        const elapsedMs = Math.round(now - socketConnectStartRef.current);
+        msg += ` (+${elapsedMs}ms)`;
+        window.alert(`소켓 연결 완료! 버튼 클릭 후 ${elapsedMs}ms 경과`);
+        socketConnectStartRef.current = null;
+      }
+      console.log(msg);
+      socket.emit('join', roomRef.current);
+    });
     socket.on('connect_error', (err) => console.error('[socket] connect_error', err));
     socket.on('error', (err) => console.error('[socket] error', err));
 
