@@ -14,7 +14,6 @@ export default function WebRTC() {
   const connectionStartRef = useRef(null);
   const socketConnectStartRef = useRef(null);
 
-  // STT state/refs
   const [sttOn, setSttOn] = useState(false);
   const sttOnRef = useRef(false);
   const sttControllerRef = useRef(null);
@@ -70,8 +69,7 @@ export default function WebRTC() {
           autoGainControl: true,
         },
         video: false,
-        audio: true,
-        // video: true,
+        // audio: true,
       });
       localStreamRef.current = stream;
       if (myVideoRef.current) myVideoRef.current.srcObject = stream;
@@ -98,9 +96,7 @@ export default function WebRTC() {
     console.log('[rtc-text] recognized & sent:', payload);
   }, []);
 
-  // base64 유틸은 stt 모듈 내부에서 사용됨
-
-  // --- STT (분리된 모듈 사용) -------------------------------------------------
+  // --- STT -------------------------------------------------
 
   const startSTT = useCallback(async () => {
     if (sttOnRef.current) return;
@@ -119,7 +115,9 @@ export default function WebRTC() {
   const stopSTT = useCallback(() => {
     try {
       sttControllerRef.current?.stop();
-    } catch {}
+    } catch (e) {
+      console.error('[stt] stop error', e);
+    }
     sttOnRef.current = false;
     setSttOn(false);
   }, []);
@@ -153,7 +151,6 @@ export default function WebRTC() {
     console.log('[rtc-text] sent:', payload);
   }, []);
 
-  // speakText는 tts 모듈에서 import하여 사용
 
   // --- lifecycle -------------------------------------------------------------
 
@@ -229,12 +226,14 @@ export default function WebRTC() {
     });
 
     return () => {
-      try { stopSTT(); } catch { }
+      stopSTT();
       try {
         socket.off('rtc-text');
         socket.off('rtc-message');
         socket.disconnect();
-      } catch { }
+      } catch (e) {
+        console.error('[socket] disconnect error', e);
+      }
 
       try {
         if (pcRef.current) {
@@ -243,12 +242,16 @@ export default function WebRTC() {
           });
           pcRef.current.close();
         }
-      } catch { }
+      } catch (e) {
+        console.error('[pc] close error', e);
+      }
       pcRef.current = null;
 
       try {
         localStreamRef.current?.getTracks().forEach((t) => t.stop());
-      } catch { }
+      } catch (e) {
+        console.error('[localStream] stop error', e);
+      }
       localStreamRef.current = null;
     };
   }, [ensurePeerConnection, getMedia, addLocalTracksOnce, speakText, stopSTT]);
