@@ -1,6 +1,3 @@
-// Text-to-Speech utilities
-// Exports: speakText(text: string)
-
 export async function speakText(text, options = {}) {
   if (!text || typeof text !== 'string') return;
 
@@ -34,17 +31,5 @@ export async function speakText(text, options = {}) {
     } catch (e) {
       console.warn('[tts] Google TTS failed, falling back to SpeechSynthesis', e);
     }
-  }
-
-  try {
-    if ('speechSynthesis' in window) {
-      const utter = new SpeechSynthesisUtterance(text);
-      utter.lang = languageCode || 'ko-KR';
-      window.speechSynthesis.speak(utter);
-    } else {
-      console.warn('[tts] speechSynthesis not supported');
-    }
-  } catch (e) {
-    console.error('[tts] fallback speech synthesis error', e);
   }
 }

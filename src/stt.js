@@ -18,7 +18,7 @@ export class STTController {
     if (this.running) return;
 
     const debounceMs = Number(import.meta.env.VITE_GOOGLE_STT_DEBOUNCE_MS || 2500);
-    const silenceRms = Number(import.meta.env.VITE_GOOGLE_STT_SILENCE_RMS || 0.005);
+    const silenceRms = Number(import.meta.env.VITE_GOOGLE_STT_SILENCE_RMS || 0.01);
 
     const stream = await this.getMedia();
 
@@ -157,7 +157,7 @@ export class STTController {
           }),
         }
       );
-
+      console.log()
       if (!res.ok) {
         console.error('[stt] recognize HTTP error', res.status, await res.text());
         return;
