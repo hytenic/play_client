@@ -1,0 +1,50 @@
+// Text-to-Speech utilities
+// Exports: speakText(text: string)
+
+export async function speakText(text, options = {}) {
+  if (!text || typeof text !== 'string') return;
+
+  const apiKey = options.apiKey ?? import.meta.env.VITE_GOOGLE_TTS_API_KEY;
+  const voiceName = options.voiceName ?? import.meta.env.VITE_GOOGLE_TTS_VOICE ?? 'en-US-Standard-C';
+  const languageCode = options.languageCode ?? import.meta.env.VITE_GOOGLE_TTS_LANG ?? 'en-US';
+  const speakingRate = Number(options.speakingRate ?? import.meta.env.VITE_GOOGLE_TTS_RATE ?? 1.0);
+  const pitch = Number(options.pitch ?? import.meta.env.VITE_GOOGLE_TTS_PITCH ?? 0);
+
+  if (apiKey) {
+    try {
+      const res = await fetch(
+        `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            input: { text },
+            voice: { languageCode, name: voiceName },
+            audioConfig: { audioEncoding: 'MP3', speakingRate, pitch },
+          }),
+        }
+      );
+      if (!res.ok) throw new Error(`TTS HTTP ${res.status}`);
+      const json = await res.json();
+      const audioContent = json?.audioContent;
+      if (!audioContent) throw new Error('No audioContent in TTS response');
+      const audio = new Audio(`data:audio/mp3;base64,${audioContent}`);
+      await audio.play();
+      return;
+    } catch (e) {
+      console.warn('[tts] Google TTS failed, falling back to SpeechSynthesis', e);
+    }
+  }
+
+  try {
+    if ('speechSynthesis' in window) {
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = languageCode || 'ko-KR';
+      window.speechSynthesis.speak(utter);
+    } else {
+      console.warn('[tts] speechSynthesis not supported');
+    }
+  } catch (e) {
+    console.error('[tts] fallback speech synthesis error', e);
+  }
+}
