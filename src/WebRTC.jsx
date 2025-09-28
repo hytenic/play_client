@@ -40,14 +40,16 @@ export default function WebRTC() {
 
     const pc = new RTCPeerConnection({
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-    });
+    }); // 구글 STUN 서버를 사용하여 rtc connection 생성
 
     pc.onicecandidate = (event) => {
       if (!event.candidate) return;
-      send({ event: 'candidate', data: event.candidate });
+      send({ event: 'candidate', data: event.candidate }); // candidate를 socket으로 전송
     };
 
     pc.ontrack = (event) => {
+      // 수신한 오디오 스트림 데이터를 peerAudioRef.current에 할당
+      // audio 태그가 peerAudioRef를 참조하여 오디오 재생
       const [remoteStream] = event.streams;
       if (peerAudioRef.current) {
         peerAudioRef.current.srcObject = remoteStream;
@@ -59,6 +61,7 @@ export default function WebRTC() {
   }, [send]);
 
   const getMedia = useCallback(async () => {
+    // 로컬 미디어 스트림 가져오기. 사용자의 오디오를 입력받아 스트림 생성
     if (localStreamRef.current) return localStreamRef.current;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -81,6 +84,7 @@ export default function WebRTC() {
   }, []);
 
   const addLocalTracksOnce = useCallback((pc, stream) => {
+    // 로컬 오디오 트랙 추가
     const existingTracks = pc.getSenders().map((s) => s.track).filter(Boolean);
     stream.getTracks().forEach((track) => {
       if (!existingTracks.includes(track)) pc.addTrack(track, stream);
@@ -88,6 +92,7 @@ export default function WebRTC() {
   }, []);
 
   const emitText = useCallback((text) => {
+    // STT 결과를 소켓으로 전송(테스트시 하드코딩된 텍스트를 전송)
     const socket = socketRef.current;
     const room = roomRef.current;
     if (!socket || !room || !text) return;
@@ -99,6 +104,7 @@ export default function WebRTC() {
   // --- STT -------------------------------------------------
 
   const startSTT = useCallback(async () => {
+    // STT 시작
     if (sttOnRef.current) return;
     if (!sttControllerRef.current) {
       sttControllerRef.current = new STTController({
@@ -112,6 +118,7 @@ export default function WebRTC() {
   }, [getMedia, emitText]);
 
   const stopSTT = useCallback(() => {
+    // STT 종료
     try {
       sttControllerRef.current?.stop();
     } catch (e) {
@@ -124,6 +131,7 @@ export default function WebRTC() {
   // --- WebRTC signaling ------------------------------------------------------
 
   const createOffer = useCallback(async () => {
+    // peerConnection 및 rtc 연결을 위한 offer 생성
     const pc = ensurePeerConnection();
     const start = performance.now();
     connectionStartRef.current = start;
@@ -139,6 +147,7 @@ export default function WebRTC() {
   }, [ensurePeerConnection, getMedia, send, addLocalTracksOnce]);
 
   const sendTestText = useCallback(() => {
+    // 테스트용 텍스트를 소켓으로 전송
     const socket = socketRef.current;
     const room = roomRef.current;
     if (!socket) {
@@ -157,12 +166,12 @@ export default function WebRTC() {
     if (didInitRef.current) return;
     didInitRef.current = true;
 
-    const room = 'test';
+    const room = 'test'; // 테스트 용도로 소켓 통신을 위한 room 고정
     setRoomId(room);
     roomRef.current = room;
 
     const socket = io('http://localhost:5004', { autoConnect: false });
-    socketRef.current = socket;
+    socketRef.current = socket; // 렌더링과 무관하게 소켓 연결되도록 Ref에 할당
 
     socket.on('connect', () => {
       const now = performance.now();
@@ -185,7 +194,7 @@ export default function WebRTC() {
           ? payload
           : (payload?.text ?? payload?.message ?? JSON.stringify(payload));
         console.log('[socket] rtc-text:', text);
-        speakText(text);
+        speakText(text); // tts로 통역된 내용을 소리로 출력
       } catch (e) {
         console.error('[socket] rtc-text handle error', e);
       }
@@ -199,8 +208,10 @@ export default function WebRTC() {
 
         if (content.event === 'offer') {
           console.log('[rtc] Receive Offer', content.data);
+          // 수신한 offer를 peerConnection에 설정
           await pc.setRemoteDescription(content.data);
 
+          // 로컬 오디오 정보를 가져와서 peerConnection에 연결
           const stream = await getMedia();
           addLocalTracksOnce(pc, stream);
 
@@ -210,10 +221,12 @@ export default function WebRTC() {
           await pc.setLocalDescription(answer);
         } else if (content.event === 'answer') {
           console.log('[rtc] Receive Answer');
+          // 수신한 answer를 peerConnection에 설정
           await ensurePeerConnection().setRemoteDescription(content.data);
         } else if (content.event === 'candidate') {
           console.log('[rtc] Receive Candidate');
           try {
+            // 수신한 candidate를 peerConnection에 추가
             await ensurePeerConnection().addIceCandidate(content.data);
           } catch (err) {
             console.error('Error adding received ICE candidate', err);
@@ -225,6 +238,7 @@ export default function WebRTC() {
     });
 
     return () => {
+      // 컴포넌트 unmount시 소켓 및 stt 종료
       stopSTT();
       try {
         socket.off('rtc-text');
@@ -234,6 +248,7 @@ export default function WebRTC() {
         console.error('[socket] disconnect error', e);
       }
 
+      // peerConnection 종료
       try {
         if (pcRef.current) {
           pcRef.current.getSenders?.().forEach((s) => {
@@ -246,6 +261,7 @@ export default function WebRTC() {
       }
       pcRef.current = null;
 
+      // 로컬 오디오 트랙 종료
       try {
         localStreamRef.current?.getTracks().forEach((t) => t.stop());
       } catch (e) {
