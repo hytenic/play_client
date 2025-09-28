@@ -24,6 +24,7 @@ export default function WebRTC() {
 
   const [roomId, setRoomId] = useState('test');
   const roomRef = useRef('test');
+  const [statusMsg, setStatusMsg] = useState('');
 
   // --- helpers ---------------------------------------------------------------
 
@@ -386,8 +387,10 @@ export default function WebRTC() {
       if (socketConnectStartRef.current != null) {
         const elapsedMs = Math.round(now - socketConnectStartRef.current);
         msg += ` (+${elapsedMs}ms)`;
-        window.alert(`소켓 연결 완료! 버튼 클릭 후 ${elapsedMs}ms 경과`);
+        setStatusMsg(`소켓 연결 완료! 버튼 클릭 후 ${elapsedMs}ms 경과`);
         socketConnectStartRef.current = null;
+      } else {
+        setStatusMsg('소켓 연결 완료!');
       }
       console.log(msg);
       socket.emit('join', roomRef.current);
@@ -475,6 +478,22 @@ export default function WebRTC() {
       >
         {sttOn ? 'Stop STT' : 'Start STT'}
       </button>
+
+      {statusMsg && (
+        <div
+          style={{
+            marginTop: 8,
+            padding: '6px 10px',
+            background: '#f0f9ff',
+            border: '1px solid #bae6fd',
+            borderRadius: 6,
+            color: '#0369a1',
+            display: 'inline-block',
+          }}
+        >
+          {statusMsg}
+        </div>
+      )}
 
       <br />
       <audio
