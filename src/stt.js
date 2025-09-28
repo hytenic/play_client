@@ -1,8 +1,7 @@
 export class STTController {
-  constructor({ getMedia, emitText, onDebugLog } = {}) {
-    this.getMedia = getMedia; // async () => MediaStream
-    this.emitText = emitText; // (text: string) => void
-    this.onDebugLog = onDebugLog; // optional debug logger
+  constructor({ getMedia, emitText } = {}) {
+    this.getMedia = getMedia;
+    this.emitText = emitText;
 
     this.mediaRecorder = null;
     this.chunks = [];
@@ -14,13 +13,6 @@ export class STTController {
     this.mimeType = 'audio/webm; codecs=opus';
   }
 
-  log(...args) {
-    if (this.onDebugLog) {
-      try { this.onDebugLog(...args); } catch { }
-    } else {
-      console.log(...args);
-    }
-  }
 
   async start() {
     if (this.running) return;
@@ -106,7 +98,7 @@ export class STTController {
       }
     }, 150);
 
-    this.log('[stt] started, mime=', mimeType, 'debounceMs=', debounceMs, 'silenceRms=', silenceRms);
+    console.log('[stt] started, mime=', mimeType, 'debounceMs=', debounceMs, 'silenceRms=', silenceRms);
   }
 
   stop() {
@@ -114,20 +106,26 @@ export class STTController {
     try {
       const mr = this.mediaRecorder;
       if (mr && mr.state !== 'inactive') {
-        try { mr.stop(); } catch { }
+        mr.stop()
       }
       this.mediaRecorder = null;
-    } catch { }
+    } catch (e) {
+      console.error('[stt] MediaRecorder stop error', e);
+    }
     try {
       if (this.intervalId) clearInterval(this.intervalId);
-    } catch { }
+    } catch (e) {
+      console.error('[stt] clearInterval error', e);
+    }
     this.intervalId = null;
     try {
       this.audioCtx?.close();
-    } catch { }
+    } catch (e) {
+      console.error('[stt] AudioContext close error', e);
+    }
     this.audioCtx = null;
     this.chunks = [];
-    this.log('[stt] stopped');
+    console.log('[stt] stopped');
   }
 
   async recognizeWithGoogle(blob, mimeTypeHint) {
@@ -184,7 +182,7 @@ export const blobToBase64 = (blob) => new Promise((resolve, reject) => {
   const reader = new FileReader();
   reader.onloadend = () => {
     try {
-      const dataUrl = reader.result; // data:...;base64,XXXX
+      const dataUrl = reader.result;
       const base64 = String(dataUrl).split(',')[1];
       resolve(base64);
     } catch (e) {

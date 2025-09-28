@@ -104,7 +104,6 @@ export default function WebRTC() {
       sttControllerRef.current = new STTController({
         getMedia,
         emitText,
-        onDebugLog: (...args) => console.log('[STT]', ...args),
       });
     }
     await sttControllerRef.current.start();
