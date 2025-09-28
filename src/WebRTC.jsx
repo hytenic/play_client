@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 export default function WebRTC() {
   const myVideoRef = useRef(null);
-  const peerVideoRef = useRef(null);
+  const peerAudioRef = useRef(null);
 
   const pcRef = useRef(null);
   const socketRef = useRef(null);
@@ -52,8 +52,8 @@ export default function WebRTC() {
 
     pc.ontrack = (event) => {
       const [remoteStream] = event.streams;
-      if (peerVideoRef.current) {
-        peerVideoRef.current.srcObject = remoteStream;
+      if (peerAudioRef.current) {
+        peerAudioRef.current.srcObject = remoteStream;
       }
     };
 
@@ -71,7 +71,9 @@ export default function WebRTC() {
           echoCancellation: true,
           autoGainControl: true,
         },
-        video: true,
+        video: false,
+        audio: true,
+        // video: true,
       });
       localStreamRef.current = stream;
       if (myVideoRef.current) myVideoRef.current.srcObject = stream;
@@ -142,7 +144,6 @@ export default function WebRTC() {
                 encoding,                   // 'WEBM_OPUS'
                 languageCode,               // 'ko-KR'
                 enableAutomaticPunctuation: false,
-                // enableAutomaticPunctuation: true,
                 sampleRateHertz: 48000,     // OPUS 표준 샘플레이트
                 audioChannelCount: 1,
               },
@@ -251,22 +252,11 @@ export default function WebRTC() {
 
       const silentFor = now - lastSpeechTsRef.current;
       if (silentFor >= debounceMs && sttSegmentChunksRef.current.length > 0) {
-        // 1️⃣ Blob 먼저 만들어서 현재까지 녹음된 구간을 확정
         const segment = new Blob(sttSegmentChunksRef.current.slice(), { type: mimeType });
         sttSegmentChunksRef.current = [];
 
-        // 2️⃣ Blob 재생(디버그)
-        // try {
-        //   console.log('[DEBUG] segment type:', segment.type, 'size:', segment.size);
-        //   const url = URL.createObjectURL(segment);
-        //   const audio = new Audio(url);
-        //   audio.play().catch(() => { });
-        // } catch { }
-
-        // 3️⃣ STT 호출 (현재까지 녹음된 구간 전송)
         recognizeWithGoogle(segment, mimeType);
 
-        // 4️⃣ 녹음 재시작 (다음 구간을 위한 MediaRecorder 초기화)
         try {
           mr.stop();
           mr.start(1000);
@@ -402,13 +392,6 @@ export default function WebRTC() {
       console.log(msg);
       socket.emit('join', roomRef.current);
     });
-    socket.on('connect_error', (err) => console.error('[socket] connect_error', err));
-    socket.on('error', (err) => console.error('[socket] error', err));
-
-    socket.on('room-full', () => {
-      window.alert('입장 인원 초과');
-      window.location.reload();
-    });
 
     socket.on('rtc-text', (payload) => {
       try {
@@ -458,7 +441,6 @@ export default function WebRTC() {
     return () => {
       try { stopSTT(); } catch { }
       try {
-        socket.off('room-full');
         socket.off('rtc-text');
         socket.off('rtc-message');
         socket.disconnect();
@@ -485,7 +467,6 @@ export default function WebRTC() {
 
   return (
     <div>
-      <h1>실시간 P2P 통신을 해보자</h1>
       <button onClick={createOffer}>Connection</button>
       <button onClick={sendTestText} style={{ marginLeft: 8 }}>Send Text</button>
       <button
@@ -496,29 +477,11 @@ export default function WebRTC() {
       </button>
 
       <br />
-      <div>나</div>
-      <video
-        ref={myVideoRef}
-        playsInline
+      <audio
+        ref={peerAudioRef}
         autoPlay
-        muted
-        width={300}
-        height={300}
-        style={{ background: '#000' }}
+        controls
       />
-
-      <br />
-      <div>상대</div>
-      <div style={{ width: 1280, height: 720, margin: 0, padding: 0 }}>
-        <video
-          ref={peerVideoRef}
-          playsInline
-          autoPlay
-          width={1280}
-          height={720}
-          style={{ background: '#000' }}
-        />
-      </div>
     </div>
   );
 }
